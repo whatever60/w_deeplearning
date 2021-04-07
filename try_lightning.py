@@ -81,7 +81,7 @@ class MNISTDataModule(pl.LightningDataModule):
 
     def prepare_data(self):
         '''download, tokenize, etc
-        this is called from one single GPU, so do not use it to assign state 
+        This is called from one single GPU, so do not use it to assign state 
         '''
         MNIST(self.data_dir, train=True, download=True)
         MNIST(self.data_dir, train=True, download=True)
@@ -114,7 +114,7 @@ class MNISTDataModule(pl.LightningDataModule):
 
 if __name__ == '__main__':
     dm = MNISTDataModule(data_dir='/home/tiankang/wusuowei/dataset')
-    print(dm.dims is dm.size())
+    print(dm.dims)
     model = LitModel(*dm.size(), dm.num_classes)
-    trainer = pl.Trainer(max_epochs=1, gpus=[5], progress_bar_refresh_rate=20)
+    trainer = pl.Trainer(max_epochs=1, gpus=[7], progress_bar_refresh_rate=20)
     trainer.fit(model, dm)

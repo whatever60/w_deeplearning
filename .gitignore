@@ -3,6 +3,8 @@
 archive/
 lightning_logs/
 test/
+*_aladdin/
+temp/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
