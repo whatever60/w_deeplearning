@@ -29,7 +29,7 @@ class SwAV(pl.LightningModule):
         temperature,
         sinkhorn_iteration,
         crops_for_assign,
-        num_crops,
+        crop_num,
         start_lr,
         lr,
         final_lr,
@@ -37,35 +37,41 @@ class SwAV(pl.LightningModule):
         epsilon,
         queue_length,
         queue_path,
-        epoch_queue_start,
+        queue_start_epoch,
     ):
         """
         Args:
             crops_for_assign: list of crop ids for computing assignment
-            num_crops: number of global and local crops, ex: [2, 6]
+            crop_num: number of global and local crops, ex: [2, 6]
+
             queue_length: set queue when batch size is small,
                 must be divisible by total batch-size (i.e. total_gpus * batch_size),
                 set to 0 to remove the queue
             queue_path: folder within the logs directory
-            epoch_queue_start: start uing the queue after this epoch
+            queue_start_epoch: start uing the queue after this epoch
         """
-        
+
         super().__init__()
+
+        assert not queue_length % (batch_size * total_gpus)
+        self.queue = None
+        self.queue_length = queue_length
+        self.queue_path = queue_path
+        self.queue_start_epoch = queue_start_epoch
+
         self.save_hyperparameters()
         self.lr_schedule = self.get_linear_warmup_cosine_annealing_scheduler()
-        self.get_assignment = self.distributed_sinkhorn if total_gpus > 1 else self.sinkhorn
-        if backbone == 'resnet18':
+        self.get_assignment = (
+            self.distributed_sinkhorn if total_gpus > 1 else self.sinkhorn
+        )
+        if backbone == "resnet18":
             backbone = resnet18
-        elif backbone == 'resnet50':
+        elif backbone == "resnet50":
             backbone = resnet50
         else:
-            raise ValueError('Backbone unknown.')
+            raise ValueError("Backbone unknown.")
         self.model = backbone(
-            hidden_mlp,
-            feature_dim,
-            num_prototypes,
-            first_conv,
-            maxpool1
+            hidden_mlp, feature_dim, num_prototypes, first_conv, maxpool1
         )
 
     def setup(self, stage):
@@ -73,33 +79,42 @@ class SwAV(pl.LightningModule):
             queue_folder = os.path.join(self.logger.log_dir, self.queue_path)
             if not os.path.exists(queue_folder):
                 os.makedirs(queue_folder)
-            self.queue_path = os.path.join(queue_folder, "queue" + str(self.trainer.global_rank) + ".pth")
+            self.queue_path = os.path.join(
+                queue_folder, "queue" + str(self.trainer.global_rank) + ".pth"
+            )
             if os.path.isfile(self.queue_path):
                 self.queue = torch.load(self.queue_path)["queue"]
 
     def forward(self, x):
-        return self.backbone_forward(x)
+        return self.model.backbone_forward(x)
 
     def training_step(self, batch, batch_idx):
         loss = self.shared_step(batch)
-        self.log('train loss', loss)
+        self.log("train loss", loss)
         return loss
-    
+
     def validation_step(self, batch, batch_idx):
         loss = self.shared_step(batch)
-        self.log('val loss', loss)
+        self.log("val loss", loss)
 
     def configure_optimizers(self):
         if self.exclude_bn_bias:
-            params = self.exclude_from_wt_decay(self.named_parameters(), weight_decay=self.weight_decay)
+            params = self.exclude_from_wt_decay(
+                self.named_parameters(), weight_decay=self.weight_decay
+            )
         else:
             params = self.parameters()
-
-        if self.optim == 'sgd':
-            optimizer = torch.optim.SGD(params, lr=self.hparams.lr, momentum=0.9, weight_decay=self.hparams.weight_decay)
-        elif self.optim == 'adam':
-            optimizer = torch.optim.Adam(params, lr=self.hparams.lr, weight_decay=self.hparams.weight_decay)
-
+        if self.optim == "sgd":
+            optimizer = torch.optim.SGD(
+                params,
+                lr=self.hparams.lr,
+                momentum=0.9,
+                weight_decay=self.hparams.weight_decay,
+            )
+        elif self.optim == "adam":
+            optimizer = torch.optim.Adam(
+                params, lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
+            )
         return optimizer
 
     def optimizer_step(
@@ -114,8 +129,13 @@ class SwAV(pl.LightningModule):
         using_lbfgs,
     ):
         for param_group in optimizer.param_groups:
-            param_group['lr'] = self.lr_schedule[self.trainer.global_step]
-        self.log('lr', self.lr_schedule[self.trainer.global_step], on_step=True, on_epoch=False)
+            param_group["lr"] = self.lr_schedule[self.trainer.global_step]
+        self.log(
+            "lr",
+            self.lr_schedule[self.trainer.global_step],
+            on_step=True,
+            on_epoch=False,
+        )
 
         super().optimizer_step(
             epoch,
@@ -131,72 +151,82 @@ class SwAV(pl.LightningModule):
     def on_after_backward(self) -> None:
         if self.current_epoch < self.hparams.freeze_prototype_epochs:
             for name, p in self.model.named_parameters():
-                if 'prototypes' in name:
+                if "prototypes" in name:
                     p.grad = None
                     break
             else:
-                raise RuntimeError('No prototype tensor found in your model.')
+                raise RuntimeError("No prototype tensor found in your model.")
 
     def on_train_epoch_start(self):
         if self.queue_length > 0:
-            if self.current_epoch >= self.hparams.epoch_queue_start and self.queue is None:
+            if self.current_epoch == self.queue_start_epoch and self.queue is None:
+                # Init the queue
                 self.queue = torch.zeros(
                     len(self.crops_for_assign),
                     self.queue_length // (self.hparams.total_gpus),
                     self.hparams.feature_dim,
-                    device=self.device
+                    device=self.device,
                 )
-        self.use_the_queue = False
 
     def on_train_epoch_end(self, outputs) -> None:
         if self.queue is not None:
             torch.save({"queue": self.queue}, self.queue_path)
 
     def shared_step(self, batch):
-        if self.dataset == 'stl10':
+        # Only use concatenate the queue when it is filled.
+        queue_use = any(self.queue[:, -1, :] != 0)
+        if self.dataset == "stl10":
             batch = batch[0]  # unlabeled data
         images, _ = batch[:-1]
         batch_size = images[0].shape[0]
-        
+
         # Step 1: normalize the prototypes
         with torch.no_grad():
             w = self.model.prototypes.weight.data.clone()
             w = nn.functional.normalize(w, dim=1, p=2)
             self.model.prototypes.weight.copy_(w)
-        
+
         # Step 2: multi forward pass
         embedding, outputs = self.model(images)
         embedding = embedding.detach()
-        
+
         # Step 3: SwAV loss
         loss = 0
         for i, crop_id in enumerate(self.hparams.crops_for_assign):
             with torch.no_grad():
-                out = outputs[batch_size * crop_id: batch_size * (crop_id + 1)]
-                
+                out = outputs[batch_size * crop_id : batch_size * (crop_id + 1)]
+
                 # Step 4: use the queue
                 if self.queue is not None:
-                    if self.use_the_queue or not torch.all(self.queue[i, -1, :] == 0):
-                        self.use_the_queue = True
-                        out = torch.cat((self.queue[i] @ self.model.prototypes.weight.t(), out))
+                    if queue_use:
+                        out = torch.cat(
+                            (self.queue[i] @ self.model.prototypes.weight.t(), out)
+                        )
                     # fill the queue
                     self.queue[i, batch_size:] = self.queue[i, :-batch_size].clone()
-                    self.queue[i, :batch_size] = embedding[crop_id * batch_size: (crop_id + 1) * batch_size]
-                
+                    self.queue[i, :batch_size] = embedding[
+                        crop_id * batch_size : (crop_id + 1) * batch_size
+                    ]
+
                 # Step 5: get assignments
                 q = torch.exp(out / self.epsilon).t()
-                q = self.get_assignments(q, self.hparams.sinkhorn_iterations)[-batch_size:]
+                q = self.get_assignments(q, self.hparams.sinkhorn_iterations)[
+                    -batch_size:
+                ]
             sub_loss = 0
-            for v in torch.arange(sum(self.hparams.num_crops)):
+            for v in torch.arange(sum(self.hparams.crop_num)):
                 if v == crop_id:
                     continue
-                p = (outputs[batch_size * v, batch_size * (v + 1)] / self.hparams.temperature).softmax(dim=1)
+                p = (
+                    outputs[batch_size * v, batch_size * (v + 1)]
+                    / self.hparams.temperature
+                ).softmax(dim=1)
                 sub_loss -= (q * torch.log(p)).sum(dim=1).mean()
-            loss += sub_loss / (sum(self.hparams.num_crops) - 1)
+            loss += sub_loss / (sum(self.hparams.crop_num) - 1)
         return loss / len(self.hparams.crops_for_assign)
 
     def exclude_from_wt_decay(self, named_params, weight_decay):
-        skip_list=['bias', 'bn']
+        skip_list = ["bias", "bn"]
         params = []
         excluded_params = []
         for name, param in named_params:
@@ -206,19 +236,22 @@ class SwAV(pl.LightningModule):
                 excluded_params.append(param)
             else:
                 params.append(param)
-        return [{'params': params, 'weight_decay': weight_decay}, {'params': excluded_params, 'weight_decay': 0.}]
+        return [
+            {"params": params, "weight_decay": weight_decay},
+            {"params": excluded_params, "weight_decay": 0.0},
+        ]
 
     def get_linear_warmup_cosine_annealing_scheduler(self):
         global_batch_size = self.hparams.total_gpus * self.hparams.batch_size
         step_per_epoch = torch.ceil(self.hparams.num_samples // global_batch_size)
-        
+
         warmup_lrs = torch.linspace(
-            self.hparams.start_lr,
-            self.hparams.lr,
-            self.warmup_epochs * step_per_epoch
+            self.hparams.start_lr, self.hparams.lr, self.warmup_epochs * step_per_epoch
         )
 
-        cosine_steps = step_per_epoch * (self.hparams.max_epochs - self.hparams.warmup_epochs)
+        cosine_steps = step_per_epoch * (
+            self.hparams.max_epochs - self.hparams.warmup_epochs
+        )
         # Angular frequency of cosine function. Thus the period equals 2 * cosine_steps.
         w = math.pi / cosine_steps
         # Amplitude of cosine function

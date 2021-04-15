@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch_geometric import nn as gnn
 from torch_geometric import utils
 from torch_geometric import datasets
-from torch_geometric import transforms as T
+from torch_geometric import transforms as GT
 
 
 class GCNConv(gnn.MessagePassing):
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     DEVICE = 'cuda:9'
     DATASET_NAME = 'Cora'
     dataset = datasets.Planetoid(root=f'/home/tiankang/wusuowei/data/{DATASET_NAME}', name=DATASET_NAME)
-    dataset.transform = T.NormalizeFeatures()
+    dataset.transform = GT.NormalizeFeatures()
     print(type(dataset))
     print('#Classes:', dataset.num_classes)
     print('#Node features:', dataset.num_node_features)

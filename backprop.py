@@ -50,7 +50,7 @@ def example_0():
 def example1():
     '''
     Three ways to prevent being tracked by the computation graph.
-    - x.require_grad_(False) / x.requre_grad = False
+    - x.require_grad_(False) / x.require_grad = False
     - x.detach()
     - with torch.no_grad() 
     '''
