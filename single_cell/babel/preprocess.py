@@ -75,12 +75,11 @@ def qc(
     return df.iloc[good_cell, good_gene].copy().astype(pd.SparseDtype("int16"))
 
 
-def normalize(df):
-    log1p_ss = df.sparse.to_coo().log1p()
-    nor_log1p_ss = preprocessing.MinMaxScaler().fit_transform(log1p_ss)
-    # scaler = preprocessing.StandardScaler()
-    # scaler.fit(nor_log1p_ss)
-    return nor_log1p_ss  # , scaler.mean_, scaler.scale_
+def normalize(X):
+    X_l1 = preprocessing.normalize(X, norm='l1')
+    X_l1_log1p = X.log1p()
+    X_l1_log1p_scale = preprocessing.scale(X)
+    return X  # , scaler.mean_, scaler.scale_
 
 
 def pca(sparse_matrix):

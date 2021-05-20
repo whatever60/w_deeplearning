@@ -5,6 +5,10 @@ lightning_logs/
 test/
 *_aladdin/
 temp/
+*_ref/
+data*/
+imgs/
+cached/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
