@@ -7,7 +7,10 @@ test/
 temp/
 *_ref/
 data*/
+img/
 imgs/
+images/
+image/
 cached/
 
 # Byte-compiled / optimized / DLL files

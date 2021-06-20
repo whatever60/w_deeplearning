@@ -88,6 +88,7 @@ def plot_qc(X, path:str) -> None:
 
 def normalize(
     X,
+    genes=None,
     labels=None,
     apply_qc: bool = True,
     log: bool = True,
@@ -107,7 +108,7 @@ def normalize(
         plot_qc(X, preqc_path)
     if apply_qc:
         print(X.shape)
-        X, labels = qc(X, labels, **qc_kwargs)
+        X, genes, labels = qc(X, genes, labels, **qc_kwargs)
         print(X.shape)
         if plot:
             plot_qc(X, postqc_path)
@@ -126,10 +127,7 @@ def normalize(
     # X = log1p(X)
     # max_ = X.max(axis=1).A.flatten()
     # X = spmatrix_divide_vector(X, np.where(max_ == 0, np.inf, max_))
-    if labels is None:
-        return X.astype("float32")
-    else:
-        return X.astype("float32"), labels
+    return X.astype("float32"), genes, labels
 
 
 def _sum(X, axis):
@@ -157,6 +155,7 @@ def _clip(X, q) -> None:
 
 def qc(
     X,
+    genes=None,
     labels=None,
     *,
     clip_q=100,
@@ -224,6 +223,8 @@ def qc(
     else:
         raise NotImplementedError
 
+    genes = None if genes is None else genes[good_genes]
+    labels = None if labels is None else labels[good_genes]
     if labels is None:
         return X[good_cells][:, good_genes].copy().astype("int32"), None
     else:

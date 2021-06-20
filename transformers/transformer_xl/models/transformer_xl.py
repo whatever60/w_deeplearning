@@ -17,22 +17,20 @@ class PositionalEmbedding(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, emb_dim, head_dim, num_heads, p=0.0):
+    def __init__(self, emb_dim, head_dim, num_heads, p_a=0.0, p=0.1):
         super().__init__()
+        self.emb_dim = emb_dim
         self.num_heads = num_heads
         self.head_dim = head_dim
 
         self.Wq = nn.Linear(emb_dim, head_dim * num_heads, bias=False)
-        self.Wkv = nn.Linear(
-            emb_dim, head_dim * num_heads * 2, bias=False
-        )  # get both keys and values at once for efficiency
-        self.Wp = nn.Linear(
-            emb_dim, head_dim * num_heads, bias=False
-        )  # for positional embeddings
-
+        # get both keys and values at once for efficiency
+        self.Wkv = nn.Linear(emb_dim, head_dim * num_heads * 2, bias=False)
+        # for positional embeddings
+        self.Wp = nn.Linear(emb_dim, head_dim * num_heads, bias=False)
         self.scale = 1 / (head_dim ** 5)
+
         self.dropout = nn.Dropout(p)
-        self.norm = nn.LayerNorm(emb_dim)
         self.fc = nn.Linear(head_dim * num_heads, emb_dim, bias=False)
 
     def _rel_shift(self, x):
@@ -54,6 +52,7 @@ class MultiHeadAttention(nn.Module):
         u_,  # [num_heads, head_dim]
         v_,  # [num_heads, head_dim]
         mask=None,
+        return_att=False
     ):
         # In essence, emb_new is just query, emb_mem is just key and value.
         batch_size = emb_new.shape[1]
@@ -78,7 +77,11 @@ class MultiHeadAttention(nn.Module):
         attention = self.dropout(attention)
         # cannot use view here
         output = torch.einsum("qibh, ibhd -> qbhd", attention, v).flatten(start_dim=2)
-        return self.fc(output)  # project back and add residual and norm
+        output = self.fc(output)
+        return (output, attention.detach().cpu()) if return_att else (output, None)
+
+# mistakes: 
+# - scale factor幂是0.5（开平方）我没打小数点（当成5了）
 
 
 def test_self_attention():
@@ -89,7 +92,7 @@ def test_self_attention():
     emb_old = torch.randn(6, 3, 32)  # old sequence length is 6
     emb_pos = torch.randn(6 + 7, 32)
     u_, v_ = torch.randn(4, 17), torch.randn(4, 17)
-    rprint(model(emb_new, emb_old, emb_pos, u_, v_).shape)  # [7, 3, 32]
+    rprint(model(emb_new, emb_old, emb_pos, u_, v_)[0].shape)  # [7, 3, 32]
 
 
 class DecoderBlock(nn.Module):
@@ -98,25 +101,26 @@ class DecoderBlock(nn.Module):
     def __init__(self, emb_dim, head_dim, num_heads, p_att, p_ff):
         super().__init__()
         self.self_attention = MultiHeadAttention(emb_dim, head_dim, num_heads, p=p_att)
-        self.dropout = nn.Dropout(p_ff)
+        self.norm0 = nn.LayerNorm(emb_dim)
         self.feed_forward = nn.Sequential(
             nn.Linear(emb_dim, int(emb_dim * self.forward_expansion)),
             nn.ReLU(inplace=True),
+            nn.Dropout(p_ff),
             nn.Linear(int(emb_dim * self.forward_expansion), emb_dim),
+            nn.Dropout(p_ff),
         )
-        self.norm = nn.LayerNorm(emb_dim)
+        self.norm1 = nn.LayerNorm(emb_dim)
 
-    def forward(self, emb_new, emb_mem, emb_pos, u, v, mask=None):
-        attention_output = self.norm(
-            self.dropout(
-                self.self_attention(emb_new, emb_mem, emb_pos, u, v, mask=mask)
-            )
-            + emb_new
+    def forward(self, emb_new, emb_mem, emb_pos, u, v, mask=None, return_att=False):
+        a_out, attention = self.self_attention(
+            emb_new, emb_mem, emb_pos, u, v, mask=mask, return_att=return_att
         )
-        return self.norm(
-            self.dropout(self.feed_forward(attention_output)) + attention_output
-        )
+        a_out = self.norm0(self.dropout(a_out) + emb_new)
+        return self.norm1(self.feed_forward(a_out) + a_out), attention
 
+# mistakes:
+# - 应该用两个layernorm的，用成一个了
+# - 少了一个dropout
 
 class StandardWordEmbedding(nn.Module):
     def __init__(
@@ -177,7 +181,7 @@ class TransformerXL(nn.Module):
             new_memory.append(torch.cat([m, h], dim=0)[begin_idx:end_idx].detach())
         self.memory = new_memory
 
-    def forward(self, input_idxs):
+    def forward(self, input_idxs, return_att=False):
         # input_idxs: [seq_length, batch_size]
         if self.memory is None:  # init memory
             self.memory = [
@@ -199,6 +203,7 @@ class TransformerXL(nn.Module):
         emb_pos = self.dropout(self.positional_embedding(pos_idxs))
 
         hidden_states = [emb_word]
+        atts = []
         layer_out = emb_word
         mask = (
             torch.triu(
@@ -212,12 +217,15 @@ class TransformerXL(nn.Module):
             .unsqueeze_(-1)
         )
         for m, layer in zip(self.memory, self.layers):
-            layer_out = layer(layer_out, m, emb_pos, self.u, self.v, mask=mask)
+            layer_out, att = layer(
+                layer_out, m, emb_pos, self.u, self.v, mask=mask, return_att=return_att
+            )
+            atts.append(att)
             hidden_states.append(layer_out)
 
         logits = self.projection_head(self.dropout(layer_out))
         self.update_memory(hidden_states)
-        return logits
+        return (logits, atts) if return_att else logits
 
 
 def test_transformer():
@@ -230,7 +238,7 @@ def test_transformer():
         memory_length=7,
     )
     input_idxs = torch.randint(1000, (5, 9))  # 5 tokens per sentence, batch size 9
-    rprint(model(input_idxs).shape)  # [5, 9, 1000]
+    rprint(model(input_idxs)[0].shape)  # [5, 9, 1000]
     rprint(len(model.memory))  # [5]
     model(input_idxs)
     rprint(model.memory[0].shape)  # [7, 9, 32]
@@ -241,3 +249,6 @@ if __name__ == "__main__":
     from rich.traceback import install
 
     install()
+    test_self_attention()
+    test_transformer()
+    

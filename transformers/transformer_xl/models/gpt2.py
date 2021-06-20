@@ -47,7 +47,8 @@ class GPT2(nn.Module):
         ])
         self.head = nn.Linear(emb_dim, vocab_size, bias=False)
     
-    def forward(self, x):  # [seq_length, batch_size]
+    def forward(self, x, return_att=False):  # [seq_length, batch_size]
+        # `return_att` is here for API consistency.
         seq_length = x.shape[0]
         w_emb = self.word_embedding(x)
         p_emb = self.positional_embedding(torch.arange(seq_length, device=x.device)).unsqueeze_(dim=1)

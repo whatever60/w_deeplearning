@@ -109,7 +109,6 @@ if __name__ == "__main__":
     from tokenizers import Tokenizer
     from rich import print as rprint
     from rich.traceback import install
-
     install()
 
     DATA_DIR = "./data/tokenized.pkl"

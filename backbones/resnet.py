@@ -231,7 +231,6 @@ class ResNet(nn.Module):
     def forward(self, x, eval_mode=False):
         # where will you use eval_mode? Who knows.
         x = self.backbone(x)
-        print(x.shape)
         return x if eval_mode else self.final(x)
 
 
@@ -361,22 +360,26 @@ def resnet152(**kwargs):
 
 
 def test():
-    from rich import print
-    import pytorch_lightning as pl
-    pl.seed_everything(42)
+
     # imgs = torch.randn((10, 3, 224, 224))
     # model = resnet18()
-    # print(model(imgs).shape)
+    # rprint(model(imgs).shape)
     # imgs = torch.randn((10, 3, 224, 224))
     # model = resnet50()
-    # print(model(imgs).shape)
+    # rprint(model(imgs).shape)
     imgs = torch.randn(10, 3, 32, 32)
     model = resnet18(first_conv=False, maxpool1=False)
     weight_init(model)
     preds = model(imgs)
-    print(preds.shape)
-    print(preds[:, 0])
+    rprint(preds.shape)
+    rprint(preds[:, 0])
 
 
 if __name__ == "__main__":
+    import pytorch_lightning as pl
+    from rich import print as rprint
+    from rich.traceback import install
+    pl.seed_everything(42)
+    install()
+
     test()

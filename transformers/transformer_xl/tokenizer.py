@@ -10,8 +10,22 @@ from transformers import AutoTokenizer
 
 def prepare_tokenizer(data_dir_train, tokenizer_path) -> None:
     """
+    This function trains a Byte Level BPE tokenizer (what GPT2 used) from scratch using 
+    the `tokenizer` package, and save it to the specified `.json` file.
+
+    Vocabulary size is set to 20k, because the maximum size is approximately 40k. Minimum 
+    frequency is set to 1.
+
+    An `<|endoftext|>` token is added to the end of each tokenized entry. This is 
+    different from what GPT did, who insert it in the front. I did this because I thought 
+    `<|endoftext|>` should appear at the end, as implied by its name. An `<unk>` token is 
+    also added as special token after noticing its existence in the raw text.
+
     Args:
-        data_dir_train: str. Path to raw text file.
+        data_dir_train: str. Path to raw text file. Like the model, the tokenizer is 
+            also trained only on the training data.
+        tokenizer_path: str. Save the trained tokenizer to this file. Should be a `.json` 
+            file.
     """
     tokenizer_path = "./tokenizer/tokenizer.json"
     tokenizer = ByteLevelBPETokenizer()
@@ -39,6 +53,28 @@ def tokenize(
     save_data_dir,
     pretrained=False,
 ) -> None:
+    """
+    Given path to text files and trained tokenizer name or path, read in text file, split 
+    it into a list of entries, load tokenizer, do tokenization, and save the tokenized 
+    results using `pickle`. The tokenized object is a list of list, with each "sublist" 
+    being a list of token ids of corresponding entries, so the sublists are not of the 
+    same length.
+
+    This function is provided as a script highly specific to my use case, where the 
+    dataset is provided in plain text format, the files are small in size so they can be 
+    loaded into memory without streaming, the dataset (Wikitext) is composed of multiple 
+    standalone entries instead of being a coherent piece like a novel.
+
+    The separater ` \n \n = ` is chosen after some eye-checking. This separater can split 
+    the text into Wiki entries as we want.
+
+    One can use pretrianed tokenizers from Huggingface 🤗, or use your own tokenizer. 
+    Because Huggingface 🤗 tokenizers of the `transformers` package and tokenizers of the 
+    `tokenizers` packages provide different APIs, so scripts are wriiten for them 
+    respectively. By setting the `pretrained` parameter to True, your `tokenizer_path` 
+    will be passed to `AutoTokenizer.from_pretrained` API of `transformers` package, 
+    otherwise to `Tokenizer.from_file` API of `tokenizers` package.
+    """
     with open(data_dir_train) as f:
         entries_train = f.read().split(" \n \n = ")
     with open(data_dir_val) as f:

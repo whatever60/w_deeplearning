@@ -1,5 +1,8 @@
 import torch
 from pytorch_lightning import Callback, LightningModule, Trainer
+from torchmetrics.functional import confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from utils import knn
 
@@ -17,10 +20,11 @@ class KNNOnlineEvaluator(Callback):  # pragma: no cover
         )
     """
 
-    def __init__(self, length_train, n_neighbors, relax=3) -> None:
+    def __init__(self, length_train, n_neighbors, num_classes, relax=3) -> None:
         super().__init__()
         self.n_neighbors = n_neighbors
         self.relax = relax
+        self.num_classes = num_classes
         self.labels_train = torch.zeros(length_train, dtype=int)
 
     def on_train_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
@@ -65,14 +69,23 @@ class KNNOnlineEvaluator(Callback):  # pragma: no cover
     ) -> None:
         pl_module.eval()
         relax = 3
-        top_1_acc, top_relax_acc = knn(
-            num_classes=trainer.datamodule.num_classes,
-            memory=pl_module.memory,
+        preds = knn(
+            num_classes=self.num_classes,
+            memory=pl_module.model.memory,
             input_data=self.output_val,
             memory_labels=self.labels_train,
-            input_labels=self.labels_val,
             n_neighbors=self.n_neighbors,
             nce_t=pl_module.hparams.nce_t,
             relax=self.relax,
         )
+        result = preds == self.labels_val.unsqueeze(dim=-1)
+        top_1_acc = result[:, 0].float().mean()
+        top_relax_acc = result.any(dim=1).float().mean()
         pl_module.log_dict({"top1_acc": top_1_acc, f"top{relax}_acc": top_relax_acc})
+
+        matrix = confusion_matrix(preds[:, 0], self.labels_val, self.num_classes).cpu()
+        fig, ax = plt.subplots(figsize=(10, 10))
+        sns.heatmap(matrix, center=int(matrix.mean()), ax=ax)
+        pl_module.logger.experiment.add_figure(
+            "Confusion matrix", fig, pl_module.current_epoch
+        )

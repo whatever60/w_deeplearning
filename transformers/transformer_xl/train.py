@@ -4,22 +4,16 @@ Adapted from
 """
 
 import warnings
-
-warnings.filterwarnings("ignore")
+warnings.filterwarnings('ignore')
 
 import torch
 from torch import nn
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from models import TransformerXL, GPT2, LSTMLM
 from scheduler import LinearWarmupCosineAnnealingLR
 from datamodule import WikiText2DataModule
-
-from rich import print as rprint
-from rich.traceback import install
-
-install()
 
 
 def init_weight_trm(m):
@@ -104,8 +98,8 @@ class Net(pl.LightningModule):
             self.model.apply(init_weight_lstm)
         self.criterion = nn.CrossEntropyLoss()
 
-    def forward(self, input_idxs):
-        return self.model(input_idxs)
+    def forward(self, input_idxs, return_att=False):
+        return self.model(input_idxs, return_att)
 
     def shared_step(self, batch):
         input_idxs, target_idxs = batch
@@ -162,8 +156,11 @@ if __name__ == "__main__":
     # version 4: start point
     # version 6: bptt 100. Higher batch size 180
     # version 9: No scheduler. 6 layers.
-    # version 10: Larger learning rate 5e-4. Higher batch size 200
+    # version 10: Larger learning rate 5e-4. Higher batch size 200 √
     # version 11: Larger clip 0.5
+    # version 25: Larger memory length 150. Batch size 128. Clip 0.5
+    # version 26: Batch size 200. Clip 0.25. Memory length 150. Bptt 100.
+    # ---- LSTM from now on ----
     # version 13: Naive LSTM (The implementation is WRONG!!! Output gate is calculated using Tanh instead of Sigmoid)
     # version 14: Built-in LSTM, 4 layers.
     # version 15: 1 layers.
@@ -174,23 +171,33 @@ if __name__ == "__main__":
     # version 19: Built-in LSTM
     # version 20: Mogrifier LSTM
     # version 21: Larger LR 1e-3. Built-in LSTM. Smaller dim emb_dim 32, hid_dim 64. 
+    # version 24: GPT2
+
+    # version 27: replicate of version 24 (GPT2)
+    # version 28: replicate of version 19 (builtin LSTM)
+    # version 29: replicate of version 18 (naive LSTM)
+    # version 30: replicate of version 20 (mogrifier LSTM)
+    # version 31: replicate of version 21 (builtin LSTM different parameters)
+
+    from rich.traceback import install
+    install()
     pl.seed_everything(42)
 
     DATA_DIR = "./data/tokenized.pkl"
-    BACKBONE_NAME = "gpt2"
-    BATCH_SIZE = 128
-    NUM_LAYERS = 4
-    EMB_DIM = 128
-    HEAD_DIM = 16
+    BACKBONE_NAME = "builtin_lstm"
+    BATCH_SIZE = 256
+    NUM_LAYERS = 1
+    EMB_DIM = 32
+    HEAD_DIM = -1
     HID_DIM = 64
-    MOG_ITERS = 5
-    NUM_HEADS = 8
-    P_FF = 0.1
-    P_ATT = 0
-    MEMORY_LENGTH_TRAIN = 128
-    MEMORY_LENGTH_VAL = 128
-    BPTT_TRAIN = 128
-    BPTT_VAL = 128
+    MOG_ITERS = -1
+    NUM_HEADS = -1
+    P_FF = -1
+    P_ATT = -1
+    MEMORY_LENGTH_TRAIN = -1
+    MEMORY_LENGTH_VAL = -1
+    BPTT_TRAIN = 30
+    BPTT_VAL = 30
 
     LR = 1e-3
     WARMUP_STEPS = 1
@@ -222,14 +229,17 @@ if __name__ == "__main__":
         batch_size=BATCH_SIZE,
         clip=CLIP,
     )
-    callback = LearningRateMonitor(logging_interval="step")
+    callbacks = [
+        LearningRateMonitor(logging_interval="step"),
+        ModelCheckpoint(monitor='pp_val', save_top_k=1, mode='min')
+    ]
     trainer = pl.Trainer(
-        gpus=[8],
+        gpus=[0],
         max_steps=MAX_STEPS,
         deterministic=True,
         gradient_clip_val=CLIP,
         reload_dataloaders_every_epoch=True,
-        callbacks=callback,
+        callbacks=callbacks,
     )
     
     CHECKPOINT = ""

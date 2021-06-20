@@ -73,7 +73,8 @@ class LSTMLM(nn.Module):
             raise NotImplementedError("The backbone you ask hasn't been implemented.")
         self.fc = nn.Linear(hid_dim, vocab_size)
 
-    def forward(self, idxs):  # [seq_length, batch_size]
+    def forward(self, idxs, return_att=False):  # [seq_length, batch_size]
+        # `return_att` is here for API consistency.
         x = self.word_embedding(idxs)
         x, _ = self.backbone(x)  # [seq_length, batch_size, emb_dim]
         return self.fc(x)
