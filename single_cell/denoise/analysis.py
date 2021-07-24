@@ -6,6 +6,7 @@ from tqdm.auto import tqdm
 
 import pipeline
 
+
 @torch.no_grad()
 def test_unet(
     net: pl.LightningModule,
@@ -21,7 +22,7 @@ def test_unet(
         dataset(data_dir),
         batch_size=model.hparams.batch_size,
         shuffle=False,
-        num_workers=4
+        num_workers=4,
     )
     recons = []
     for x in tqdm(loader):
@@ -32,14 +33,15 @@ def test_unet(
     fig.write_image(plot_dir, width=700, height=500)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import os
     from train import Net
     from datamodule import scRNADataset
+
     version = 68
-    checkpoint_dir = f'./lightning_logs/version_{version}/checkpoints/'
+    checkpoint_dir = f"./lightning_logs/version_{version}/checkpoints/"
     checkpoint = os.path.join(checkpoint_dir, os.listdir(checkpoint_dir)[0])
-    data_dir = '/home/tiankang/wusuowei/data/single_cell/babel/snareseq_GSE126074/train/data.h5ad'
-    label_dir = '/home/tiankang/wusuowei/data/single_cell/babel/snareseq_GSE126074/train/labels.npy'
-    plot_dir = f'./imgs/imgs/umap_{version}.jpg'
+    data_dir = "/home/tiankang/wusuowei/data/single_cell/babel/snareseq_GSE126074/train/data.h5ad"
+    label_dir = "/home/tiankang/wusuowei/data/single_cell/babel/snareseq_GSE126074/train/labels.npy"
+    plot_dir = f"./imgs/imgs/umap_{version}.jpg"
     fig = test_unet(Net, checkpoint, scRNADataset, data_dir, label_dir, plot_dir)

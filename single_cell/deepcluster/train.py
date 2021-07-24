@@ -92,14 +92,18 @@ class Net(pl.LightningModule):
                 self.size_memory_per_process = dataset_length // num_gpus
         self.hparams.warmup_steps = warmup_epochs * steps_per_epochs
 
+    def forward(self, x):
+        return self.model(x)
+
     def on_train_start(self) -> None:
         self.local_memory_index, self.local_memory_embeddings = self.init_memory()
 
     def on_train_epoch_start(self) -> None:
         self._start_idx = 0
-        if self.current_epoch > 0:
-            self.assignments = self.cluster_memory()
-
+    
+    def on_train_epoch_end(self) -> None:
+        self.assignments = self.cluster_memory()
+        
     def configure_optimizers(self):
         # LARS optimizer
         optimizer = LARS(
@@ -123,12 +127,11 @@ class Net(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         inputs, label, index = batch
-        emb, outputs = self.model(inputs)
+        emb, outputs = self(inputs)
         emb = emb.detach()
         if self.current_epoch > 0:
             loss = 0
             acc = 0
-            # the first epoch is used to fill the memory and do no perform backprop.
             for output, assignment in zip(outputs, self.assignments):
                 scores = output / self.hparams.temperature
                 targets = (
@@ -142,6 +145,7 @@ class Net(pl.LightningModule):
             acc /= len(outputs)
             self.log_dict(dict(loss_train=loss, acc_train=acc))
         else:
+            # the first epoch is used to fill the memory and do no perform backprop.
             loss = None
 
         crops_for_assign = self.hparams.crops_for_assign

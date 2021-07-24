@@ -19,7 +19,6 @@ class MultiscaleDropout:
         max_noise_scale: float,
     ) -> None:
         assert len(num_crops) == len(idx_crops)
-        to_tensor = lambda x: torch.from_numpy(x)
         trans = []
         for i in range(len(num_crops)):
             # indexing = lambda x: x[idx_crops[i]]
@@ -30,7 +29,7 @@ class MultiscaleDropout:
                             Indexing(idx_crops[i]),
                             RandomGaussianBlur(p_noise, min_noise_scale, max_noise_scale),
                             Dropout(min_dropout_p, max_dropout_p),
-                            to_tensor,
+                            ToTensor(),
                         ]
                     )
                 ]
@@ -40,6 +39,11 @@ class MultiscaleDropout:
 
     def __call__(self, x: np.ndarray) -> List[np.ndarray]:
         return list(map(lambda trans: trans(x), self.trans))
+
+
+class ToTensor:
+    def __call__(self, x: np.ndarray):
+        return torch.from_numpy(x)
 
 
 class Indexing:
@@ -92,18 +96,21 @@ class RandomGaussianBlur:
     def __call__(self, x: np.ndarray):
         if np.random.rand() <= self.p:
             scale = np.random.uniform(self.min_scale, self.max_scale)
-            return self.clipping(x + np.random.normal(scale=scale))
+            return self.clipping(x + np.random.normal(scale=scale, size=x.shape[0]))
         else:
             return x
 
 
 class scRNADataset(Dataset):
-    def __init__(self, data_path: str, label_path: str, transform):
+    def __init__(self, data_path: str, label_path: str, transform=None):
         super().__init__()
         self.data = anndata.read_h5ad(data_path).X
         self.labels = np.loadtxt(label_path, dtype=int)
         assert self.data.shape[0] == len(self.labels)
-        self.transform = transform
+        if transform is not None:
+            self.transform = transform
+        else:
+            self.transform = ToTensor()
 
     def __len__(self):
         return self.data.shape[0]
@@ -119,7 +126,7 @@ class scRNADataset(Dataset):
         Returns:
             np.ndarray: 1d numpy array.
         """
-        return sp_matrix.A.flatten()
+        return sp_matrix.A[0]
 
     def __getitem__(self, index):
         return (

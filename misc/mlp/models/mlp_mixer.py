@@ -21,7 +21,7 @@ class MixerBlock(nn.Module):
         )
 
     def forward(self, x):  # [batch_size, seq_length, emb_dim]
-        y = self.norm1(x)  # Note that norm is always applied on `hid_dim`
+        y = self.norm1(x)  # Note that norm is always applied on `emb_dim`
         x = self.token_mixing(y.permute(0, 2, 1)).permute(0, 2, 1) + x
 
         y = self.norm2(x)
@@ -95,15 +95,15 @@ def test_mlpmixer():
 
 
 def test_longsequence():
-    device = 'cuda:2'
-    batch_size = 200
+    device = 'cuda:3'
+    batch_size = 64
     num_tokens = 20000
-    seq_length = 10000
-    num_layers = 6
+    seq_length = 20000
+    num_layers = 4
     num_classes = 10
     input_ = torch.randint(num_tokens, size=(batch_size, seq_length), device=device)
     labels = torch.randint(num_classes, size=(batch_size,), device=device)
-    model = MLPMixerNLP(num_layers, num_tokens, seq_length, 30, 30, 30, num_classes).to(device)
+    model = MLPMixerNLP(num_layers, num_tokens, seq_length, 30, 200, 30, num_classes).to(device)
     criterion = nn.CrossEntropyLoss().to(device)
     preds = model(input_)
     loss = criterion(preds, labels)

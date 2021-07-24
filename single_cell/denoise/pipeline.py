@@ -32,10 +32,10 @@ import clustering
 def get_skip_to_line(filename: str):
     if filename.endswith(".gz"):
         open_func = gzip.open
-        split_func = lambda x: x.decode().strip().split(' ')
+        split_func = lambda x: x.decode().strip().split(" ")
     else:
         open_func = open
-        split_func = lambda x: x.strip().split(' ')
+        split_func = lambda x: x.strip().split(" ")
     skip_to_line = 1
     with open_func(filename) as f:
         for line in f:
@@ -94,7 +94,7 @@ def normalize(
     log_first: bool = False,
     norm_factor: int = 0,
     plot: bool = False,
-    postqc_path: str = "./imgs/postqc.jpg",
+    postqc_path: str = "./images/postqc.jpg",
     **qc_kwargs,
 ):
     """
@@ -126,7 +126,7 @@ def normalize(
     if apply_qc:
         return X.astype("float32"), good_genes, good_cells
     else:
-        return X.astype('float32')
+        return X.astype("float32")
 
 
 def _sum(X, axis):
@@ -219,7 +219,7 @@ def qc(
         good_cells, good_genes = qc_mine()
     else:
         raise NotImplementedError
-    
+
     return X[good_cells][:, good_genes].copy().astype("int32"), good_genes, good_cells
 
 
@@ -392,9 +392,7 @@ def plot(
                     y=u[:, 1],
                     z=u[:, 2],
                     mode="markers",
-                    marker=dict(
-                        size=2, color=labels, colorscale=colorscale, opacity=0
-                    ),
+                    marker=dict(size=2, color=labels, colorscale=colorscale, opacity=0),
                 )
             )
         fig.update_layout(

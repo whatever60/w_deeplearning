@@ -43,7 +43,7 @@ class LinearBlock(nn.Module):
             nn.BatchNorm1d(out_dim),
             # nn.LeakyReLU(0.2, inplace=True),
             # nn.ReLU(inplace=True)
-            ShiftedReLU(inplace=True)
+            ShiftedReLU(inplace=True),
         )
 
     def forward(self, x):
@@ -55,7 +55,7 @@ class ShiftedReLU(nn.Module):
         super().__init__()
         self.model = nn.ReLU(inplace=inplace)
         self.shift = shift
-    
+
     def forward(self, x):
         return self.model(x - self.shift)
 
@@ -64,7 +64,7 @@ class RectifiedTanh(nn.Module):
     def __init__(self):
         super().__init__()
         self.model = nn.Sequential(nn.ReLU(), nn.Tanh())
-    
+
     def forward(self, x):
         return self.model(x)
 
@@ -113,4 +113,3 @@ def test():
     preds = model(profiles)
     print(preds.shape)  # (32, in_dim)
     print(preds[:, 1])
-

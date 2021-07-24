@@ -130,6 +130,7 @@ if __name__ == "__main__":
     # 68: N2V task. mask_p = 0.15. Epochs: 100.
 
     from rich.traceback import install
+
     install()
     pl.seed_everything(42)
 
@@ -150,7 +151,7 @@ if __name__ == "__main__":
         MASK_P,
     )
 
-    CHECKPOINT = "" # "/home/tiankang/wusuowei/deeplearning/single_cell/babel/denoise/lightning_logs/version_52/checkpoints/epoch=29-step=7739.ckpt"
+    CHECKPOINT = ""  # "/home/tiankang/wusuowei/deeplearning/single_cell/babel/denoise/lightning_logs/version_52/checkpoints/epoch=29-step=7739.ckpt"
     TRAIN = True
     model = Net(
         IN_DIM,
